@@ -1,12 +1,35 @@
-from acf_pacf import *
-from adf import *
-from kpss import *
 from plot import *
 from pmdarima import auto_arima, arima
 from scipy.stats import kstest
 from scipy.stats import levene
 from arch import arch_model
 from statsmodels.stats.diagnostic import het_arch
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
+from statsmodels.tsa.stattools import adfuller, kpss
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
+from statsmodels.tsa.stattools import adfuller, kpss
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
+from statsmodels.tsa.stattools import adfuller, kpss
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+
+def plot_acf_pacf(series, lags=20, title=''):
+    fig, ax = plt.subplots(1, 2, figsize=(12, 5))
+    plot_acf(series, lags=lags, ax=ax[0], title=f'ACF {title}')
+    plot_pacf(series, lags=lags, ax=ax[1], title=f'PACF {title}', method='ywm')
+    plt.show()
+
+
 
 YEAR_COLUMNS_START = 4
 SPLIT_YEAR = '2000'
@@ -14,6 +37,27 @@ SPLIT_YEAR = '2000'
 Como o csv não está muito formatado pra fazer uma série temporal
 preciso corrigir algumas coisas:
 """
+
+# Teste de Dickey-Fuller aumentado (ADF)
+def dickey_fuller_test(series, title=''):
+    result = adfuller(series)
+    print(f'Teste de Dickey-Fuller para {title}')
+    print(f'Estatística: {result[0]}')
+    print(f'p-valor: {result[1]}')
+    print('Critérios:')
+    for key, value in result[4].items():
+        print(f'{key}: {value}')
+    print('Conclusão:', 'Estacionária' if result[1] < 0.01 else 'Não Estacionária')
+
+def kpss_test(series, title=""):
+    result = kpss(series.dropna(), regression="c", nlags="auto")  # Regressão com constante
+    print(f"\n Teste KPSS para {title}")
+    print(f"Estatística: {result[0]:.4f}")
+    print(f"p-valor: {result[1]:.4f}")
+    print("Valores Críticos:")
+    for key, value in result[3].items():
+        print(f"{key}: {value:.4f}")
+    print("Conclusão:", "[x] Não Estacionária" if result[1] < 0.05 else "[ok] Estacionária")
 
 def verificar_differenciacao(serie, nome):
     # Usar a função ndiffs do pmdarima
@@ -114,9 +158,12 @@ if __name__ == '__main__':
     plot_pacf(bra_ts_diff, lags=24, ax=axes[1], method='ywm')
     plt.show()
     # Ajuste do modelo ARIMA na série diferenciada (autoarima)
+    print("\n=========================================================================")
+    print("Ajustando modelo ARIMA na série diferenciada (sem sazonalidade)")
+    print("=========================================================================\n")
     arima_bra = auto_arima(bra_ts_diff,
-                            seasonal=True,
-                            m=12,  # Periodicidade da sazonalidade
+                            seasonal=False,
+                            # m=12,  # Periodicidade da sazonalidade (CORRECAO: Dados anuais nao tem sazonalidade)
                             trace=True,
                             stepwise=True)
 
@@ -193,3 +240,64 @@ if __name__ == '__main__':
         print("Não há evidência de heterocedasticidade condicional (não é ARCH).")
     else:
         print("Há evidência de heterocedasticidade condicional (possível efeito ARCH).")
+    
+    print("\n\n=========================================================================")
+    print("      AVALIAÇÃO DOS MODELOS COM MÉTRICAS DE ERRO E VIÉS")
+    print("=========================================================================")
+
+    from sklearn.metrics import mean_squared_error, mean_absolute_error
+
+    years_test = 10
+    train_data = bra_ts[:-years_test]
+    test_data = bra_ts[-years_test:]
+    
+    print(f"  - Treino: {len(train_data)} anos ({train_data.index.min().year} a {train_data.index.max().year})")
+    print(f"  - Teste:  {len(test_data)} anos ({test_data.index.min().year} a {test_data.index.max().year})")
+    print("-------------------------------------------------------------------------")
+
+    print("\n>>> Modelo 1: AUTOARIMA na série original de TREINO")
+    model_1_treino = auto_arima(
+        train_data,
+        seasonal=False,
+        trace=False,
+        suppress_warnings=True,
+        stepwise=True
+    )
+    print(f"Modelo 1 (treino): ARIMA{model_1_treino.order}")
+    previsoes_1 = model_1_treino.predict(n_periods=len(test_data))
+
+    mae_1 = mean_absolute_error(test_data, previsoes_1)
+    rmse_1 = np.sqrt(mean_squared_error(test_data, previsoes_1))
+    me_1 = np.mean(previsoes_1 - test_data)
+
+    print("\nMétricas de Erro e Viés para o Modelo 1:")
+    print(f"MAE:  {mae_1:.4f}")
+    print(f"RMSE: {rmse_1:.4f}")
+    print(f"Viés (ME): {me_1:.4f}")
+    
+    print("\n>>> Modelo 2: AutoARIMA na série diferenciada de TREINO")
+    train_data_diff = train_data.diff().dropna()
+
+    model_2_treino = auto_arima(
+        train_data_diff,
+        seasonal=False,
+        trace=False,
+        suppress_warnings=True,
+        stepwise=True
+    )
+    print(f"Modelo 2 (treino) encontrado para dados diferenciados: ARIMA{model_2_treino.order}")
+    
+    previsoes_diff_2 = model_2_treino.predict(n_periods=len(test_data))
+    
+    ultimo_valor_treino = train_data.iloc[-1]
+    previsoes_2 = np.cumsum(previsoes_diff_2) + ultimo_valor_treino
+    previsoes_2.index = test_data.index
+
+    mae_2 = mean_absolute_error(test_data, previsoes_2)
+    rmse_2 = np.sqrt(mean_squared_error(test_data, previsoes_2))
+    me_2 = np.mean(previsoes_2 - test_data)
+    
+    print("\nMétricas de Erro e Viés para o Modelo 2:")
+    print(f"MAE:  {mae_2:.4f}")
+    print(f"RMSE: {rmse_2:.4f}")
+    print(f"Viés (ME): {me_2:.4f}")

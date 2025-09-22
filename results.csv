@@ -1,0 +1,7 @@
+Métrica,Modelo 1 (AutoARIMA na série original),Modelo 2 (AutoARIMA na série diferenciada)
+Modelo (dados completos),"ARIMA(0,1,0) com intercepto","ARIMA(2,0,0) com intercepto"
+AIC (dados completos),467.337,468.415
+Modelo (dados de treino),"ARIMA(0,1,0)","ARMA(0,0)"
+MAE (Erro Absoluto Médio),769.174,769.174
+RMSE (Raiz Erro Quadrático Médio),912.991,912.991
+ME (Viés Médio),+67.4602,+67.4602
